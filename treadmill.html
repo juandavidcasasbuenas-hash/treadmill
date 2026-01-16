@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Treadmill Workout</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --bg-card: #161b22;
+      --bg-card-alt: #1c2128;
+      --text: #e6edf3;
+      --text-dim: #7d8590;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.3);
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --border: #30363d;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    .app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .status-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+
+    .badge.connected .dot { background: var(--success); }
+    .badge.recording .dot { background: var(--danger); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Main metrics grid */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    @media (min-width: 768px) {
+      .metrics { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100px;
+    }
+
+    .metric-card.primary {
+      background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-alt) 100%);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .metric-card.wide {
+      grid-column: span 2;
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .metric-value.large {
+      font-size: 2.5rem;
+    }
+
+    .metric-unit {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-left: 6px;
+    }
+
+    .metric-secondary {
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* Lap section */
+    .lap-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .lap-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .lap-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .lap-current {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      padding: 12px;
+      background: var(--bg-card-alt);
+      border-radius: var(--radius-sm);
+      margin-bottom: 12px;
+    }
+
+    .lap-stat-label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .lap-stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .lap-history {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .lap-row {
+      display: grid;
+      grid-template-columns: 50px 1fr 1fr 1fr;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .lap-row:last-child { border-bottom: none; }
+
+    .lap-row .lap-num {
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 16px 20px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--bg-card-alt);
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .btn-warning {
+      background: var(--warning);
+      color: #000;
+    }
+
+    .btn-lap {
+      background: linear-gradient(135deg, #6e40c9 0%, #8b5cf6 100%);
+      color: #fff;
+    }
+
+    /* Connection panel */
+    .connection-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .connection-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .connection-row + .connection-row {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .connection-label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      min-width: 100px;
+    }
+
+    .connection-status {
+      flex: 1;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    /* Export panel */
+    .export-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .export-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+
+    .export-buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .export-buttons .btn {
+      flex: 0 1 auto;
+      min-width: 100px;
+    }
+
+    /* Log (collapsed by default) */
+    .log-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .log-toggle summary {
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+
+    .log-content {
+      padding: 0 16px 16px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    /* HR display */
+    .hr-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hr-icon {
+      color: var(--danger);
+      animation: heartbeat 1s infinite;
+    }
+
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 480px) {
+      .app { padding: 12px; }
+      .metric-value { font-size: 1.75rem; }
+      .metric-value.large { font-size: 2rem; }
+      .btn { padding: 14px 16px; font-size: 0.9rem; }
+      .lap-current { grid-template-columns: 1fr 1fr; }
+      .lap-row { grid-template-columns: 40px 1fr 1fr; font-size: 0.8rem; }
+      .lap-row > *:last-child { display: none; }
+    }
+
+    @media (min-width: 1024px) {
+      .app { padding: 24px; }
+      .metrics { gap: 16px; }
+      .metric-card { padding: 20px; min-height: 120px; }
+      .metric-value { font-size: 2.5rem; }
+      .metric-value.large { font-size: 3.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 class="title">Treadmill Workout</h1>
+      <div class="status-row">
+        <span id="treadmillBadge" class="badge">
+          <span class="dot"></span>
+          <span id="treadmillStatus">Treadmill: Not connected</span>
+        </span>
+        <span id="hrBadge" class="badge">
+          <span class="dot"></span>
+          <span id="hrStatus">HR: Not connected</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Connection Panel -->
+    <div class="connection-panel">
+      <div class="connection-row">
+        <span class="connection-label">Treadmill</span>
+        <span id="treadmillDevice" class="connection-status">No device</span>
+        <button id="btnConnectTreadmill" class="btn btn-primary" style="flex:0; min-width:100px; padding:10px 16px; font-size:0.875rem;">Connect</button>
+        <button id="btnDisconnectTreadmill" class="btn btn-secondary" style="flex:0; min-width:100px; padding:10px 16px; font-size:0.875rem;" disabled>Disconnect</button>
+      </div>
+      <div class="connection-row">
+        <span class="connection-label">HR Monitor</span>
+        <span id="hrDevice" class="connection-status">No device</span>
+        <button id="btnConnectHR" class="btn btn-primary" style="flex:0; min-width:100px; padding:10px 16px; font-size:0.875rem;">Connect</button>
+        <button id="btnDisconnectHR" class="btn btn-secondary" style="flex:0; min-width:100px; padding:10px 16px; font-size:0.875rem;" disabled>Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Main Controls -->
+    <div class="controls">
+      <button id="btnStartStop" class="btn btn-success" disabled>Start Recording</button>
+      <button id="btnLap" class="btn btn-lap" disabled>Lap</button>
+      <button id="btnReset" class="btn btn-secondary" disabled>Reset</button>
+    </div>
+
+    <!-- Main Metrics -->
+    <div class="metrics">
+      <div class="metric-card primary">
+        <div class="metric-label">Current Pace</div>
+        <div id="mPace" class="metric-value large">--:--</div>
+        <div class="metric-secondary">/km</div>
+      </div>
+
+      <div class="metric-card primary">
+        <div class="metric-label">Speed</div>
+        <div id="mSpeed" class="metric-value large">-.-</div>
+        <div class="metric-secondary">km/h</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Distance</div>
+        <div id="mDistance" class="metric-value">0.00</div>
+        <div class="metric-secondary">km</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Duration</div>
+        <div id="mDuration" class="metric-value">0:00</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Avg Pace</div>
+        <div id="mAvgPace" class="metric-value">--:--</div>
+        <div class="metric-secondary">/km</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Avg Speed</div>
+        <div id="mAvgSpeed" class="metric-value">-.-</div>
+        <div class="metric-secondary">km/h</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Heart Rate</div>
+        <div id="mHR" class="metric-value">
+          <span class="hr-display">
+            <svg class="hr-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display:none;" id="hrIcon">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+            <span id="hrValue">---</span>
+          </span>
+        </div>
+        <div class="metric-secondary">bpm</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Avg HR</div>
+        <div id="mAvgHR" class="metric-value">---</div>
+        <div class="metric-secondary">bpm</div>
+      </div>
+    </div>
+
+    <!-- Lap Section -->
+    <div class="lap-section">
+      <div class="lap-header">
+        <span class="lap-title">Current Lap (<span id="lapNumber">1</span>)</span>
+        <span class="lap-title" style="color: var(--text-dim); font-weight: 400;">Auto-lap: 1 km</span>
+      </div>
+
+      <div class="lap-current">
+        <div>
+          <div class="lap-stat-label">Lap Distance</div>
+          <div id="lapDistance" class="lap-stat-value">0.00 km</div>
+        </div>
+        <div>
+          <div class="lap-stat-label">Lap Time</div>
+          <div id="lapTime" class="lap-stat-value">0:00</div>
+        </div>
+        <div>
+          <div class="lap-stat-label">Lap Pace</div>
+          <div id="lapPace" class="lap-stat-value">--:--</div>
+        </div>
+      </div>
+
+      <div id="lapHistory" class="lap-history"></div>
+    </div>
+
+    <!-- Export Panel -->
+    <div class="export-panel">
+      <div class="export-title">Export Workout</div>
+      <div class="export-buttons">
+        <button id="btnExportTCX" class="btn btn-secondary" disabled>Export TCX</button>
+        <button id="btnExportFIT" class="btn btn-secondary" disabled>Export FIT</button>
+      </div>
+    </div>
+
+    <!-- Debug Log -->
+    <details class="log-toggle">
+      <summary>Debug Log</summary>
+      <div id="log" class="log-content"></div>
+    </details>
+  </div>
+
+<script>
+// ===== Constants =====
+const FTMS_SERVICE = 0x1826;
+const TREADMILL_DATA_CHAR = 0x2ACD;
+const HR_SERVICE = 0x180D;
+const HR_MEASUREMENT_CHAR = 0x2A37;
+const AUTO_LAP_DISTANCE_KM = 1.0;
+
+// ===== State =====
+let treadmillDevice = null;
+let treadmillChar = null;
+let hrDevice = null;
+let hrChar = null;
+
+const workout = {
+  isRecording: false,
+  startTime: null,
+  distance_m: 0,
+  elapsed_s: 0,
+  lastTs_ms: null,
+  currentSpeed_kmh: 0,
+  currentHR: null,
+  hrReadings: [],
+  speedReadings: [],
+  trackpoints: [],
+  laps: [],
+  currentLap: {
+    startDistance_m: 0,
+    startTime_s: 0,
+    number: 1
+  }
+};
+
+// ===== UI Elements =====
+const el = id => document.getElementById(id);
+
+const ui = {
+  treadmillBadge: el('treadmillBadge'),
+  treadmillStatus: el('treadmillStatus'),
+  treadmillDevice: el('treadmillDevice'),
+  hrBadge: el('hrBadge'),
+  hrStatus: el('hrStatus'),
+  hrDevice: el('hrDevice'),
+  btnConnectTreadmill: el('btnConnectTreadmill'),
+  btnDisconnectTreadmill: el('btnDisconnectTreadmill'),
+  btnConnectHR: el('btnConnectHR'),
+  btnDisconnectHR: el('btnDisconnectHR'),
+  btnStartStop: el('btnStartStop'),
+  btnLap: el('btnLap'),
+  btnReset: el('btnReset'),
+  btnExportTCX: el('btnExportTCX'),
+  btnExportFIT: el('btnExportFIT'),
+  mPace: el('mPace'),
+  mSpeed: el('mSpeed'),
+  mDistance: el('mDistance'),
+  mDuration: el('mDuration'),
+  mAvgPace: el('mAvgPace'),
+  mAvgSpeed: el('mAvgSpeed'),
+  mHR: el('mHR'),
+  hrValue: el('hrValue'),
+  hrIcon: el('hrIcon'),
+  mAvgHR: el('mAvgHR'),
+  lapNumber: el('lapNumber'),
+  lapDistance: el('lapDistance'),
+  lapTime: el('lapTime'),
+  lapPace: el('lapPace'),
+  lapHistory: el('lapHistory'),
+  log: el('log')
+};
+
+// ===== Utility Functions =====
+function log(...args) {
+  const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  const time = new Date().toLocaleTimeString();
+  ui.log.textContent = `[${time}] ${line}\n` + ui.log.textContent;
+}
+
+function fmtPace(speed_kmh) {
+  if (!Number.isFinite(speed_kmh) || speed_kmh < 0.1) return '--:--';
+  const totalMin = 60 / speed_kmh;
+  const mm = Math.floor(totalMin);
+  const ss = Math.round((totalMin - mm) * 60);
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+function fmtPaceFromTime(time_s, distance_km) {
+  if (!distance_km || distance_km < 0.001) return '--:--';
+  const paceMin = (time_s / 60) / distance_km;
+  if (!Number.isFinite(paceMin)) return '--:--';
+  const mm = Math.floor(paceMin);
+  const ss = Math.round((paceMin - mm) * 60);
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+function fmtTime(seconds) {
+  if (!Number.isFinite(seconds)) return '0:00';
+  const s = Math.floor(seconds);
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (hh > 0) return `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+function fmtSpeed(speed_kmh) {
+  if (!Number.isFinite(speed_kmh)) return '-.-';
+  return speed_kmh.toFixed(1);
+}
+
+function fmtDistance(distance_km) {
+  if (!Number.isFinite(distance_km)) return '0.00';
+  return distance_km.toFixed(2);
+}
+
+// ===== Treadmill Connection =====
+async function connectTreadmill() {
+  if (!navigator.bluetooth) {
+    log('Web Bluetooth not available');
+    alert('Web Bluetooth is not supported in this browser');
+    return;
+  }
+
+  try {
+    log('Requesting treadmill...');
+    treadmillDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [FTMS_SERVICE]
+    });
+
+    ui.treadmillDevice.textContent = treadmillDevice.name || 'Unnamed device';
+    treadmillDevice.addEventListener('gattserverdisconnected', onTreadmillDisconnected);
+
+    log('Connecting GATT...');
+    const server = await treadmillDevice.gatt.connect();
+
+    log('Getting FTMS service...');
+    const service = await server.getPrimaryService(FTMS_SERVICE);
+
+    log('Getting treadmill data characteristic...');
+    treadmillChar = await service.getCharacteristic(TREADMILL_DATA_CHAR);
+
+    await treadmillChar.startNotifications();
+    treadmillChar.addEventListener('characteristicvaluechanged', onTreadmillData);
+
+    ui.treadmillBadge.classList.add('connected');
+    ui.treadmillStatus.textContent = 'Treadmill: Connected';
+    ui.btnConnectTreadmill.disabled = true;
+    ui.btnDisconnectTreadmill.disabled = false;
+    ui.btnStartStop.disabled = false;
+
+    log('Treadmill connected successfully');
+  } catch (err) {
+    log('Treadmill error:', err?.message || String(err));
+    ui.treadmillStatus.textContent = 'Treadmill: Error';
+  }
+}
+
+function onTreadmillDisconnected() {
+  log('Treadmill disconnected');
+  ui.treadmillBadge.classList.remove('connected');
+  ui.treadmillStatus.textContent = 'Treadmill: Disconnected';
+  ui.btnConnectTreadmill.disabled = false;
+  ui.btnDisconnectTreadmill.disabled = true;
+  treadmillChar = null;
+}
+
+async function disconnectTreadmill() {
+  try {
+    if (treadmillChar) {
+      treadmillChar.removeEventListener('characteristicvaluechanged', onTreadmillData);
+      await treadmillChar.stopNotifications().catch(() => {});
+      treadmillChar = null;
+    }
+    if (treadmillDevice?.gatt?.connected) {
+      treadmillDevice.gatt.disconnect();
+    }
+    ui.treadmillBadge.classList.remove('connected');
+    ui.treadmillStatus.textContent = 'Treadmill: Not connected';
+    ui.treadmillDevice.textContent = 'No device';
+    ui.btnConnectTreadmill.disabled = false;
+    ui.btnDisconnectTreadmill.disabled = true;
+    log('Treadmill disconnected');
+  } catch (err) {
+    log('Disconnect error:', err?.message || String(err));
+  }
+}
+
+function onTreadmillData(event) {
+  const dv = event.target.value;
+  const now_ms = performance.now();
+
+  // Parse speed from FTMS data
+  let speed_kmh = null;
+  if (dv.byteLength >= 4) {
+    const raw = dv.getUint16(2, true);
+    speed_kmh = raw / 100;
+  }
+
+  workout.currentSpeed_kmh = speed_kmh || 0;
+
+  // Update calculations if recording
+  if (workout.isRecording && speed_kmh !== null) {
+    updateWorkoutData(speed_kmh, now_ms);
+  }
+
+  updateDisplay();
+}
+
+// ===== HR Monitor Connection =====
+async function connectHR() {
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth is not supported in this browser');
+    return;
+  }
+
+  try {
+    log('Requesting HR monitor...');
+    hrDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [HR_SERVICE] }],
+      optionalServices: [HR_SERVICE]
+    });
+
+    ui.hrDevice.textContent = hrDevice.name || 'Unnamed device';
+    hrDevice.addEventListener('gattserverdisconnected', onHRDisconnected);
+
+    log('Connecting HR GATT...');
+    const server = await hrDevice.gatt.connect();
+
+    log('Getting HR service...');
+    const service = await server.getPrimaryService(HR_SERVICE);
+
+    log('Getting HR measurement characteristic...');
+    hrChar = await service.getCharacteristic(HR_MEASUREMENT_CHAR);
+
+    await hrChar.startNotifications();
+    hrChar.addEventListener('characteristicvaluechanged', onHRData);
+
+    ui.hrBadge.classList.add('connected');
+    ui.hrStatus.textContent = 'HR: Connected';
+    ui.btnConnectHR.disabled = true;
+    ui.btnDisconnectHR.disabled = false;
+    ui.hrIcon.style.display = 'inline';
+
+    log('HR monitor connected successfully');
+  } catch (err) {
+    log('HR error:', err?.message || String(err));
+    ui.hrStatus.textContent = 'HR: Error';
+  }
+}
+
+function onHRDisconnected() {
+  log('HR monitor disconnected');
+  ui.hrBadge.classList.remove('connected');
+  ui.hrStatus.textContent = 'HR: Disconnected';
+  ui.btnConnectHR.disabled = false;
+  ui.btnDisconnectHR.disabled = true;
+  ui.hrIcon.style.display = 'none';
+  hrChar = null;
+}
+
+async function disconnectHR() {
+  try {
+    if (hrChar) {
+      hrChar.removeEventListener('characteristicvaluechanged', onHRData);
+      await hrChar.stopNotifications().catch(() => {});
+      hrChar = null;
+    }
+    if (hrDevice?.gatt?.connected) {
+      hrDevice.gatt.disconnect();
+    }
+    ui.hrBadge.classList.remove('connected');
+    ui.hrStatus.textContent = 'HR: Not connected';
+    ui.hrDevice.textContent = 'No device';
+    ui.btnConnectHR.disabled = false;
+    ui.btnDisconnectHR.disabled = true;
+    ui.hrIcon.style.display = 'none';
+    log('HR monitor disconnected');
+  } catch (err) {
+    log('HR disconnect error:', err?.message || String(err));
+  }
+}
+
+function onHRData(event) {
+  const dv = event.target.value;
+  const flags = dv.getUint8(0);
+  const is16bit = flags & 0x01;
+  const hr = is16bit ? dv.getUint16(1, true) : dv.getUint8(1);
+
+  workout.currentHR = hr;
+
+  if (workout.isRecording) {
+    workout.hrReadings.push({ time: workout.elapsed_s, hr });
+  }
+
+  updateDisplay();
+}
+
+// ===== Workout Logic =====
+function updateWorkoutData(speed_kmh, now_ms) {
+  if (workout.lastTs_ms === null) {
+    workout.lastTs_ms = now_ms;
+    return;
+  }
+
+  const dt_s = Math.max(0, (now_ms - workout.lastTs_ms) / 1000);
+  workout.lastTs_ms = now_ms;
+  workout.elapsed_s += dt_s;
+
+  if (speed_kmh > 0.1) {
+    const speed_mps = speed_kmh * 1000 / 3600;
+    workout.distance_m += speed_mps * dt_s;
+    workout.speedReadings.push({ time: workout.elapsed_s, speed: speed_kmh });
+  }
+
+  // Record trackpoint every ~1 second for export
+  const lastTrackpoint = workout.trackpoints[workout.trackpoints.length - 1];
+  if (!lastTrackpoint || (workout.elapsed_s - lastTrackpoint.time) >= 1) {
+    workout.trackpoints.push({
+      time: workout.elapsed_s,
+      distance_m: workout.distance_m,
+      speed_kmh: speed_kmh,
+      hr: workout.currentHR
+    });
+  }
+
+  // Auto-lap check
+  const currentLapDistance = workout.distance_m - workout.currentLap.startDistance_m;
+  if (currentLapDistance >= AUTO_LAP_DISTANCE_KM * 1000) {
+    triggerLap(true);
+  }
+}
+
+function triggerLap(isAuto = false) {
+  const lapDistance_m = workout.distance_m - workout.currentLap.startDistance_m;
+  const lapTime_s = workout.elapsed_s - workout.currentLap.startTime_s;
+
+  if (lapDistance_m < 10) return; // Ignore tiny laps
+
+  const lap = {
+    number: workout.currentLap.number,
+    distance_m: lapDistance_m,
+    time_s: lapTime_s,
+    avgSpeed_kmh: (lapDistance_m / 1000) / (lapTime_s / 3600),
+    isAuto
+  };
+
+  workout.laps.push(lap);
+  log(`Lap ${lap.number}: ${fmtDistance(lap.distance_m / 1000)} km in ${fmtTime(lap.time_s)}`);
+
+  // Start new lap
+  workout.currentLap = {
+    startDistance_m: workout.distance_m,
+    startTime_s: workout.elapsed_s,
+    number: workout.currentLap.number + 1
+  };
+
+  renderLapHistory();
+}
+
+function startRecording() {
+  workout.isRecording = true;
+  workout.startTime = new Date();
+  workout.lastTs_ms = null;
+
+  ui.btnStartStop.textContent = 'Stop Recording';
+  ui.btnStartStop.classList.remove('btn-success');
+  ui.btnStartStop.classList.add('btn-danger');
+  ui.btnLap.disabled = false;
+  ui.btnReset.disabled = true;
+  ui.treadmillBadge.classList.add('recording');
+
+  log('Recording started');
+}
+
+function stopRecording() {
+  workout.isRecording = false;
+
+  ui.btnStartStop.textContent = 'Start Recording';
+  ui.btnStartStop.classList.remove('btn-danger');
+  ui.btnStartStop.classList.add('btn-success');
+  ui.btnLap.disabled = true;
+  ui.btnReset.disabled = false;
+  ui.btnExportTCX.disabled = workout.trackpoints.length < 2;
+  ui.btnExportFIT.disabled = workout.trackpoints.length < 2;
+  ui.treadmillBadge.classList.remove('recording');
+
+  log('Recording stopped');
+}
+
+function resetWorkout() {
+  workout.distance_m = 0;
+  workout.elapsed_s = 0;
+  workout.lastTs_ms = null;
+  workout.hrReadings = [];
+  workout.speedReadings = [];
+  workout.trackpoints = [];
+  workout.laps = [];
+  workout.currentLap = { startDistance_m: 0, startTime_s: 0, number: 1 };
+  workout.startTime = null;
+
+  ui.btnReset.disabled = true;
+  ui.btnExportTCX.disabled = true;
+  ui.btnExportFIT.disabled = true;
+  ui.lapHistory.innerHTML = '';
+
+  updateDisplay();
+  log('Workout reset');
+}
+
+// ===== Display Updates =====
+function updateDisplay() {
+  const speed = workout.currentSpeed_kmh;
+  const distance_km = workout.distance_m / 1000;
+
+  // Current metrics
+  ui.mSpeed.textContent = fmtSpeed(speed);
+  ui.mPace.textContent = fmtPace(speed);
+  ui.mDistance.textContent = fmtDistance(distance_km);
+  ui.mDuration.textContent = fmtTime(workout.elapsed_s);
+
+  // Averages
+  if (workout.elapsed_s > 1 && distance_km > 0.001) {
+    const avgSpeed = distance_km / (workout.elapsed_s / 3600);
+    ui.mAvgSpeed.textContent = fmtSpeed(avgSpeed);
+    ui.mAvgPace.textContent = fmtPaceFromTime(workout.elapsed_s, distance_km);
+  } else {
+    ui.mAvgSpeed.textContent = '-.-';
+    ui.mAvgPace.textContent = '--:--';
+  }
+
+  // HR
+  if (workout.currentHR) {
+    ui.hrValue.textContent = workout.currentHR;
+  } else {
+    ui.hrValue.textContent = '---';
+  }
+
+  // Average HR
+  if (workout.hrReadings.length > 0) {
+    const avgHR = Math.round(workout.hrReadings.reduce((a, b) => a + b.hr, 0) / workout.hrReadings.length);
+    ui.mAvgHR.textContent = avgHR;
+  } else {
+    ui.mAvgHR.textContent = '---';
+  }
+
+  // Current lap
+  ui.lapNumber.textContent = workout.currentLap.number;
+  const lapDistance_km = (workout.distance_m - workout.currentLap.startDistance_m) / 1000;
+  const lapTime_s = workout.elapsed_s - workout.currentLap.startTime_s;
+  ui.lapDistance.textContent = `${fmtDistance(lapDistance_km)} km`;
+  ui.lapTime.textContent = fmtTime(lapTime_s);
+  ui.lapPace.textContent = fmtPaceFromTime(lapTime_s, lapDistance_km);
+}
+
+function renderLapHistory() {
+  const html = workout.laps.map(lap => `
+    <div class="lap-row">
+      <span class="lap-num">${lap.number}</span>
+      <span>${fmtDistance(lap.distance_m / 1000)} km</span>
+      <span>${fmtTime(lap.time_s)}</span>
+      <span>${fmtPaceFromTime(lap.time_s, lap.distance_m / 1000)} /km</span>
+    </div>
+  `).reverse().join('');
+  ui.lapHistory.innerHTML = html;
+}
+
+// ===== Export Functions =====
+function exportTCX() {
+  if (workout.trackpoints.length < 2) {
+    alert('Not enough data to export');
+    return;
+  }
+
+  const startTime = workout.startTime || new Date();
+  const isoStart = startTime.toISOString();
+
+  let trackpointsXml = '';
+  for (const tp of workout.trackpoints) {
+    const tpTime = new Date(startTime.getTime() + tp.time * 1000).toISOString();
+    trackpointsXml += `
+          <Trackpoint>
+            <Time>${tpTime}</Time>
+            <DistanceMeters>${tp.distance_m.toFixed(2)}</DistanceMeters>
+            ${tp.hr ? `<HeartRateBpm><Value>${tp.hr}</Value></HeartRateBpm>` : ''}
+            <Extensions>
+              <TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
+                <Speed>${(tp.speed_kmh * 1000 / 3600).toFixed(3)}</Speed>
+              </TPX>
+            </Extensions>
+          </Trackpoint>`;
+  }
+
+  let lapsXml = '';
+  const allLaps = [...workout.laps];
+  // Add current incomplete lap if there's distance
+  const currentLapDist = workout.distance_m - workout.currentLap.startDistance_m;
+  if (currentLapDist > 10) {
+    allLaps.push({
+      number: workout.currentLap.number,
+      distance_m: currentLapDist,
+      time_s: workout.elapsed_s - workout.currentLap.startTime_s,
+      avgSpeed_kmh: (currentLapDist / 1000) / ((workout.elapsed_s - workout.currentLap.startTime_s) / 3600)
+    });
+  }
+
+  if (allLaps.length === 0) {
+    // Single lap for whole workout
+    allLaps.push({
+      distance_m: workout.distance_m,
+      time_s: workout.elapsed_s,
+      avgSpeed_kmh: (workout.distance_m / 1000) / (workout.elapsed_s / 3600)
+    });
+  }
+
+  let lapStartTime = startTime;
+  for (const lap of allLaps) {
+    const avgHR = workout.hrReadings.length > 0
+      ? Math.round(workout.hrReadings.reduce((a, b) => a + b.hr, 0) / workout.hrReadings.length)
+      : null;
+
+    lapsXml += `
+      <Lap StartTime="${lapStartTime.toISOString()}">
+        <TotalTimeSeconds>${lap.time_s.toFixed(1)}</TotalTimeSeconds>
+        <DistanceMeters>${lap.distance_m.toFixed(2)}</DistanceMeters>
+        <Calories>0</Calories>
+        ${avgHR ? `<AverageHeartRateBpm><Value>${avgHR}</Value></AverageHeartRateBpm>` : ''}
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+        <Track>${trackpointsXml}</Track>
+      </Lap>`;
+    lapStartTime = new Date(lapStartTime.getTime() + lap.time_s * 1000);
+    trackpointsXml = ''; // Only include trackpoints in first lap for simplicity
+  }
+
+  const tcx = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+  xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd"
+  xmlns:ns5="http://www.garmin.com/xmlschemas/ActivityGoals/v1"
+  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"
+  xmlns:ns2="http://www.garmin.com/xmlschemas/UserProfile/v2"
+  xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Activities>
+    <Activity Sport="Running">
+      <Id>${isoStart}</Id>${lapsXml}
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>`;
+
+  downloadFile(tcx, `workout_${formatFilename(startTime)}.tcx`, 'application/xml');
+  log('Exported TCX file');
+}
+
+function exportFIT() {
+  // FIT is a binary format - we'll create a simplified version
+  // For full compatibility, TCX is recommended
+  // This creates a basic FIT file structure
+
+  if (workout.trackpoints.length < 2) {
+    alert('Not enough data to export');
+    return;
+  }
+
+  const startTime = workout.startTime || new Date();
+
+  // FIT file creation (simplified)
+  const fitData = createFITFile(startTime, workout.trackpoints, workout.laps, workout.distance_m, workout.elapsed_s);
+
+  downloadFile(fitData, `workout_${formatFilename(startTime)}.fit`, 'application/octet-stream');
+  log('Exported FIT file');
+}
+
+function createFITFile(startTime, trackpoints, laps, totalDistance, totalTime) {
+  // FIT file constants
+  const FIT_EPOCH = Date.UTC(1989, 11, 31, 0, 0, 0) / 1000;
+  const fitTimestamp = Math.floor(startTime.getTime() / 1000) - FIT_EPOCH;
+
+  // Build the data records
+  const records = [];
+
+  // File ID message (type 0)
+  records.push(createFileIdMessage(fitTimestamp));
+
+  // Session message
+  records.push(createSessionMessage(fitTimestamp, totalDistance, totalTime, trackpoints));
+
+  // Record messages (trackpoints)
+  for (const tp of trackpoints) {
+    const tpTimestamp = fitTimestamp + Math.floor(tp.time);
+    records.push(createRecordMessage(tpTimestamp, tp.distance_m, tp.speed_kmh, tp.hr));
+  }
+
+  // Combine all records
+  const dataContent = concatArrayBuffers(records);
+
+  // Create header
+  const header = createFITHeader(dataContent.byteLength);
+
+  // Combine header + data
+  const fileContent = concatArrayBuffers([header, dataContent]);
+
+  // Calculate CRC
+  const crc = calculateFITCRC(new Uint8Array(fileContent));
+  const crcBuffer = new ArrayBuffer(2);
+  new DataView(crcBuffer).setUint16(0, crc, true);
+
+  return new Blob([fileContent, crcBuffer], { type: 'application/octet-stream' });
+}
+
+function createFITHeader(dataSize) {
+  const buffer = new ArrayBuffer(14);
+  const view = new DataView(buffer);
+
+  view.setUint8(0, 14); // Header size
+  view.setUint8(1, 32); // Protocol version (2.0)
+  view.setUint16(2, 2132, true); // Profile version
+  view.setUint32(4, dataSize, true); // Data size
+
+  // ".FIT" signature
+  view.setUint8(8, 0x2E);
+  view.setUint8(9, 0x46);
+  view.setUint8(10, 0x49);
+  view.setUint8(11, 0x54);
+
+  // Header CRC
+  const headerCRC = calculateFITCRC(new Uint8Array(buffer, 0, 12));
+  view.setUint16(12, headerCRC, true);
+
+  return buffer;
+}
+
+function createFileIdMessage(timestamp) {
+  // Definition message + data message for file_id
+  const buffer = new ArrayBuffer(20);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message header
+  view.setUint8(offset++, 0x40); // Definition message, local type 0
+  view.setUint8(offset++, 0); // Reserved
+  view.setUint8(offset++, 0); // Architecture (little endian)
+  view.setUint16(offset, 0, true); offset += 2; // Global message number (file_id = 0)
+  view.setUint8(offset++, 2); // Number of fields
+
+  // Field definitions
+  view.setUint8(offset++, 0); // Field def: type
+  view.setUint8(offset++, 1); // Size
+  view.setUint8(offset++, 0); // Base type: enum
+
+  view.setUint8(offset++, 4); // Field def: time_created
+  view.setUint8(offset++, 4); // Size
+  view.setUint8(offset++, 134); // Base type: uint32
+
+  // Data message header
+  view.setUint8(offset++, 0x00); // Data message, local type 0
+  view.setUint8(offset++, 4); // type = activity
+  view.setUint32(offset, timestamp, true); offset += 4; // time_created
+
+  return buffer.slice(0, offset);
+}
+
+function createSessionMessage(timestamp, distance, time, trackpoints) {
+  const buffer = new ArrayBuffer(50);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message
+  view.setUint8(offset++, 0x41); // Definition message, local type 1
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 0);
+  view.setUint16(offset, 18, true); offset += 2; // session = 18
+  view.setUint8(offset++, 4); // 4 fields
+
+  // Fields: timestamp, total_distance, total_elapsed_time, sport
+  view.setUint8(offset++, 253); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
+  view.setUint8(offset++, 9); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
+  view.setUint8(offset++, 7); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
+  view.setUint8(offset++, 5); view.setUint8(offset++, 1); view.setUint8(offset++, 0);
+
+  // Data message
+  view.setUint8(offset++, 0x01);
+  view.setUint32(offset, timestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(distance * 100), true); offset += 4; // cm
+  view.setUint32(offset, Math.round(time * 1000), true); offset += 4; // ms
+  view.setUint8(offset++, 1); // Running
+
+  return buffer.slice(0, offset);
+}
+
+function createRecordMessage(timestamp, distance, speed, hr) {
+  const buffer = new ArrayBuffer(30);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message
+  view.setUint8(offset++, 0x42); // Definition message, local type 2
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 0);
+  view.setUint16(offset, 20, true); offset += 2; // record = 20
+  view.setUint8(offset++, 4); // 4 fields
+
+  // Fields: timestamp, distance, speed, heart_rate
+  view.setUint8(offset++, 253); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
+  view.setUint8(offset++, 5); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
+  view.setUint8(offset++, 6); view.setUint8(offset++, 2); view.setUint8(offset++, 132);
+  view.setUint8(offset++, 3); view.setUint8(offset++, 1); view.setUint8(offset++, 2);
+
+  // Data message
+  view.setUint8(offset++, 0x02);
+  view.setUint32(offset, timestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(distance * 100), true); offset += 4; // cm
+  view.setUint16(offset, Math.round(speed * 1000 / 3.6), true); offset += 2; // mm/s
+  view.setUint8(offset++, hr || 0);
+
+  return buffer.slice(0, offset);
+}
+
+function concatArrayBuffers(buffers) {
+  const totalLength = buffers.reduce((sum, buf) => sum + buf.byteLength, 0);
+  const result = new ArrayBuffer(totalLength);
+  const view = new Uint8Array(result);
+  let offset = 0;
+  for (const buf of buffers) {
+    view.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  return result;
+}
+
+function calculateFITCRC(data) {
+  const crcTable = [
+    0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+    0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400
+  ];
+
+  let crc = 0;
+  for (let i = 0; i < data.length; i++) {
+    const byte = data[i];
+    let tmp = crcTable[crc & 0xF];
+    crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ crcTable[byte & 0xF];
+    tmp = crcTable[crc & 0xF];
+    crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ crcTable[(byte >> 4) & 0xF];
+  }
+  return crc;
+}
+
+function formatFilename(date) {
+  return date.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ===== Event Listeners =====
+ui.btnConnectTreadmill.addEventListener('click', connectTreadmill);
+ui.btnDisconnectTreadmill.addEventListener('click', disconnectTreadmill);
+ui.btnConnectHR.addEventListener('click', connectHR);
+ui.btnDisconnectHR.addEventListener('click', disconnectHR);
+
+ui.btnStartStop.addEventListener('click', () => {
+  if (workout.isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+ui.btnLap.addEventListener('click', () => triggerLap(false));
+ui.btnReset.addEventListener('click', resetWorkout);
+ui.btnExportTCX.addEventListener('click', exportTCX);
+ui.btnExportFIT.addEventListener('click', exportFIT);
+
+// Initial display
+updateDisplay();
+log('Ready. Connect your treadmill to begin.');
+</script>
+</body>
+</html>
