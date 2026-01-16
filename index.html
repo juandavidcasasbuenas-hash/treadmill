@@ -1028,6 +1028,58 @@ function renderLapHistory() {
 }
 
 // ===== Export Functions =====
+
+// Build list of laps for export (including current incomplete lap)
+function getLapsForExport() {
+  const allLaps = [];
+  let lapStartTime_s = 0;
+  let lapStartDist_m = 0;
+
+  for (const lap of workout.laps) {
+    allLaps.push({
+      number: lap.number,
+      startTime_s: lapStartTime_s,
+      endTime_s: lapStartTime_s + lap.time_s,
+      startDist_m: lapStartDist_m,
+      endDist_m: lapStartDist_m + lap.distance_m,
+      time_s: lap.time_s,
+      distance_m: lap.distance_m
+    });
+    lapStartTime_s += lap.time_s;
+    lapStartDist_m += lap.distance_m;
+  }
+
+  // Add current incomplete lap if there's meaningful distance
+  const currentLapDist = workout.distance_m - workout.currentLap.startDistance_m;
+  const currentLapTime = workout.elapsed_s - workout.currentLap.startTime_s;
+  if (currentLapDist > 10) {
+    allLaps.push({
+      number: workout.currentLap.number,
+      startTime_s: workout.currentLap.startTime_s,
+      endTime_s: workout.elapsed_s,
+      startDist_m: workout.currentLap.startDistance_m,
+      endDist_m: workout.distance_m,
+      time_s: currentLapTime,
+      distance_m: currentLapDist
+    });
+  }
+
+  // If no laps at all, create one for the whole workout
+  if (allLaps.length === 0 && workout.distance_m > 10) {
+    allLaps.push({
+      number: 1,
+      startTime_s: 0,
+      endTime_s: workout.elapsed_s,
+      startDist_m: 0,
+      endDist_m: workout.distance_m,
+      time_s: workout.elapsed_s,
+      distance_m: workout.distance_m
+    });
+  }
+
+  return allLaps;
+}
+
 function exportTCX() {
   if (workout.trackpoints.length < 2) {
     alert('Not enough data to export');
@@ -1036,11 +1088,31 @@ function exportTCX() {
 
   const startTime = workout.startTime || new Date();
   const isoStart = startTime.toISOString();
+  const allLaps = getLapsForExport();
 
-  let trackpointsXml = '';
-  for (const tp of workout.trackpoints) {
-    const tpTime = new Date(startTime.getTime() + tp.time * 1000).toISOString();
-    trackpointsXml += `
+  let lapsXml = '';
+
+  for (const lap of allLaps) {
+    const lapStartDate = new Date(startTime.getTime() + lap.startTime_s * 1000);
+
+    // Filter trackpoints for this lap
+    const lapTrackpoints = workout.trackpoints.filter(tp =>
+      tp.time >= lap.startTime_s && tp.time <= lap.endTime_s
+    );
+
+    // Calculate lap-specific HR average
+    const lapHRReadings = workout.hrReadings.filter(hr =>
+      hr.time >= lap.startTime_s && hr.time <= lap.endTime_s
+    );
+    const avgHR = lapHRReadings.length > 0
+      ? Math.round(lapHRReadings.reduce((a, b) => a + b.hr, 0) / lapHRReadings.length)
+      : null;
+
+    // Build trackpoints XML for this lap
+    let trackpointsXml = '';
+    for (const tp of lapTrackpoints) {
+      const tpTime = new Date(startTime.getTime() + tp.time * 1000).toISOString();
+      trackpointsXml += `
           <Trackpoint>
             <Time>${tpTime}</Time>
             <DistanceMeters>${tp.distance_m.toFixed(2)}</DistanceMeters>
@@ -1051,48 +1123,19 @@ function exportTCX() {
               </TPX>
             </Extensions>
           </Trackpoint>`;
-  }
-
-  let lapsXml = '';
-  const allLaps = [...workout.laps];
-  // Add current incomplete lap if there's distance
-  const currentLapDist = workout.distance_m - workout.currentLap.startDistance_m;
-  if (currentLapDist > 10) {
-    allLaps.push({
-      number: workout.currentLap.number,
-      distance_m: currentLapDist,
-      time_s: workout.elapsed_s - workout.currentLap.startTime_s,
-      avgSpeed_kmh: (currentLapDist / 1000) / ((workout.elapsed_s - workout.currentLap.startTime_s) / 3600)
-    });
-  }
-
-  if (allLaps.length === 0) {
-    // Single lap for whole workout
-    allLaps.push({
-      distance_m: workout.distance_m,
-      time_s: workout.elapsed_s,
-      avgSpeed_kmh: (workout.distance_m / 1000) / (workout.elapsed_s / 3600)
-    });
-  }
-
-  let lapStartTime = startTime;
-  for (const lap of allLaps) {
-    const avgHR = workout.hrReadings.length > 0
-      ? Math.round(workout.hrReadings.reduce((a, b) => a + b.hr, 0) / workout.hrReadings.length)
-      : null;
+    }
 
     lapsXml += `
-      <Lap StartTime="${lapStartTime.toISOString()}">
+      <Lap StartTime="${lapStartDate.toISOString()}">
         <TotalTimeSeconds>${lap.time_s.toFixed(1)}</TotalTimeSeconds>
         <DistanceMeters>${lap.distance_m.toFixed(2)}</DistanceMeters>
         <Calories>0</Calories>
         ${avgHR ? `<AverageHeartRateBpm><Value>${avgHR}</Value></AverageHeartRateBpm>` : ''}
         <Intensity>Active</Intensity>
-        <TriggerMethod>Manual</TriggerMethod>
-        <Track>${trackpointsXml}</Track>
+        <TriggerMethod>Distance</TriggerMethod>
+        <Track>${trackpointsXml}
+        </Track>
       </Lap>`;
-    lapStartTime = new Date(lapStartTime.getTime() + lap.time_s * 1000);
-    trackpointsXml = ''; // Only include trackpoints in first lap for simplicity
   }
 
   const tcx = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1115,54 +1158,51 @@ function exportTCX() {
 }
 
 function exportFIT() {
-  // FIT is a binary format - we'll create a simplified version
-  // For full compatibility, TCX is recommended
-  // This creates a basic FIT file structure
-
   if (workout.trackpoints.length < 2) {
     alert('Not enough data to export');
     return;
   }
 
   const startTime = workout.startTime || new Date();
+  const allLaps = getLapsForExport();
 
-  // FIT file creation (simplified)
-  const fitData = createFITFile(startTime, workout.trackpoints, workout.laps, workout.distance_m, workout.elapsed_s);
+  const fitData = createFITFile(startTime, workout.trackpoints, allLaps, workout.distance_m, workout.elapsed_s);
 
   downloadFile(fitData, `workout_${formatFilename(startTime)}.fit`, 'application/octet-stream');
   log('Exported FIT file');
 }
 
 function createFITFile(startTime, trackpoints, laps, totalDistance, totalTime) {
-  // FIT file constants
   const FIT_EPOCH = Date.UTC(1989, 11, 31, 0, 0, 0) / 1000;
   const fitTimestamp = Math.floor(startTime.getTime() / 1000) - FIT_EPOCH;
 
-  // Build the data records
   const records = [];
 
-  // File ID message (type 0)
+  // File ID message
   records.push(createFileIdMessage(fitTimestamp));
 
-  // Session message
-  records.push(createSessionMessage(fitTimestamp, totalDistance, totalTime, trackpoints));
-
-  // Record messages (trackpoints)
+  // Record messages (trackpoints) - these come before laps in FIT
   for (const tp of trackpoints) {
     const tpTimestamp = fitTimestamp + Math.floor(tp.time);
     records.push(createRecordMessage(tpTimestamp, tp.distance_m, tp.speed_kmh, tp.hr));
   }
 
-  // Combine all records
+  // Lap messages
+  for (const lap of laps) {
+    const lapStartTimestamp = fitTimestamp + Math.floor(lap.startTime_s);
+    records.push(createLapMessage(lapStartTimestamp, lap.time_s, lap.distance_m));
+  }
+
+  // Session message (comes after laps)
+  records.push(createSessionMessage(fitTimestamp, totalDistance, totalTime, laps.length));
+
+  // Activity message (required to close the file properly)
+  records.push(createActivityMessage(fitTimestamp, totalTime, laps.length));
+
   const dataContent = concatArrayBuffers(records);
-
-  // Create header
   const header = createFITHeader(dataContent.byteLength);
-
-  // Combine header + data
   const fileContent = concatArrayBuffers([header, dataContent]);
 
-  // Calculate CRC
   const crc = calculateFITCRC(new Uint8Array(fileContent));
   const crcBuffer = new ArrayBuffer(2);
   new DataView(crcBuffer).setUint16(0, crc, true);
@@ -1177,7 +1217,7 @@ function createFITHeader(dataSize) {
   view.setUint8(0, 14); // Header size
   view.setUint8(1, 32); // Protocol version (2.0)
   view.setUint16(2, 2132, true); // Profile version
-  view.setUint32(4, dataSize, true); // Data size
+  view.setUint32(4, dataSize, true);
 
   // ".FIT" signature
   view.setUint8(8, 0x2E);
@@ -1185,7 +1225,6 @@ function createFITHeader(dataSize) {
   view.setUint8(10, 0x49);
   view.setUint8(11, 0x54);
 
-  // Header CRC
   const headerCRC = calculateFITCRC(new Uint8Array(buffer, 0, 12));
   view.setUint16(12, headerCRC, true);
 
@@ -1193,87 +1232,226 @@ function createFITHeader(dataSize) {
 }
 
 function createFileIdMessage(timestamp) {
-  // Definition message + data message for file_id
   const buffer = new ArrayBuffer(20);
   const view = new DataView(buffer);
   let offset = 0;
 
   // Definition message header
-  view.setUint8(offset++, 0x40); // Definition message, local type 0
-  view.setUint8(offset++, 0); // Reserved
-  view.setUint8(offset++, 0); // Architecture (little endian)
-  view.setUint16(offset, 0, true); offset += 2; // Global message number (file_id = 0)
-  view.setUint8(offset++, 2); // Number of fields
-
-  // Field definitions
-  view.setUint8(offset++, 0); // Field def: type
-  view.setUint8(offset++, 1); // Size
-  view.setUint8(offset++, 0); // Base type: enum
-
-  view.setUint8(offset++, 4); // Field def: time_created
-  view.setUint8(offset++, 4); // Size
-  view.setUint8(offset++, 134); // Base type: uint32
-
-  // Data message header
-  view.setUint8(offset++, 0x00); // Data message, local type 0
-  view.setUint8(offset++, 4); // type = activity
-  view.setUint32(offset, timestamp, true); offset += 4; // time_created
-
-  return buffer.slice(0, offset);
-}
-
-function createSessionMessage(timestamp, distance, time, trackpoints) {
-  const buffer = new ArrayBuffer(50);
-  const view = new DataView(buffer);
-  let offset = 0;
-
-  // Definition message
-  view.setUint8(offset++, 0x41); // Definition message, local type 1
+  view.setUint8(offset++, 0x40); // Definition, local type 0
   view.setUint8(offset++, 0);
-  view.setUint8(offset++, 0);
-  view.setUint16(offset, 18, true); offset += 2; // session = 18
-  view.setUint8(offset++, 4); // 4 fields
+  view.setUint8(offset++, 0); // Little endian
+  view.setUint16(offset, 0, true); offset += 2; // file_id = 0
+  view.setUint8(offset++, 2); // 2 fields
 
-  // Fields: timestamp, total_distance, total_elapsed_time, sport
-  view.setUint8(offset++, 253); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
-  view.setUint8(offset++, 9); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
-  view.setUint8(offset++, 7); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
-  view.setUint8(offset++, 5); view.setUint8(offset++, 1); view.setUint8(offset++, 0);
+  // Field: type (field 0)
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 0); // enum
+
+  // Field: time_created (field 4)
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134); // uint32
 
   // Data message
-  view.setUint8(offset++, 0x01);
+  view.setUint8(offset++, 0x00); // Data, local type 0
+  view.setUint8(offset++, 4); // type = activity
   view.setUint32(offset, timestamp, true); offset += 4;
-  view.setUint32(offset, Math.round(distance * 100), true); offset += 4; // cm
-  view.setUint32(offset, Math.round(time * 1000), true); offset += 4; // ms
-  view.setUint8(offset++, 1); // Running
 
   return buffer.slice(0, offset);
 }
 
 function createRecordMessage(timestamp, distance, speed, hr) {
-  const buffer = new ArrayBuffer(30);
+  const buffer = new ArrayBuffer(40);
   const view = new DataView(buffer);
   let offset = 0;
 
   // Definition message
-  view.setUint8(offset++, 0x42); // Definition message, local type 2
+  view.setUint8(offset++, 0x41); // Definition, local type 1
   view.setUint8(offset++, 0);
   view.setUint8(offset++, 0);
   view.setUint16(offset, 20, true); offset += 2; // record = 20
   view.setUint8(offset++, 4); // 4 fields
 
-  // Fields: timestamp, distance, speed, heart_rate
-  view.setUint8(offset++, 253); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
-  view.setUint8(offset++, 5); view.setUint8(offset++, 4); view.setUint8(offset++, 134);
-  view.setUint8(offset++, 6); view.setUint8(offset++, 2); view.setUint8(offset++, 132);
-  view.setUint8(offset++, 3); view.setUint8(offset++, 1); view.setUint8(offset++, 2);
+  // timestamp (field 253)
+  view.setUint8(offset++, 253);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // distance (field 5) - in cm
+  view.setUint8(offset++, 5);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // enhanced_speed (field 73) - in mm/s
+  view.setUint8(offset++, 73);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // heart_rate (field 3)
+  view.setUint8(offset++, 3);
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 2);
+
+  // Data message
+  view.setUint8(offset++, 0x01);
+  view.setUint32(offset, timestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(distance * 100), true); offset += 4;
+  view.setUint32(offset, Math.round((speed || 0) * 1000 / 3.6), true); offset += 4;
+  view.setUint8(offset++, hr || 255); // 255 = invalid
+
+  return buffer.slice(0, offset);
+}
+
+function createLapMessage(startTimestamp, totalTime_s, distance_m) {
+  const buffer = new ArrayBuffer(60);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message
+  view.setUint8(offset++, 0x42); // Definition, local type 2
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 0);
+  view.setUint16(offset, 19, true); offset += 2; // lap = 19
+  view.setUint8(offset++, 6); // 6 fields
+
+  // timestamp (field 253)
+  view.setUint8(offset++, 253);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // start_time (field 2)
+  view.setUint8(offset++, 2);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_elapsed_time (field 7) - in ms
+  view.setUint8(offset++, 7);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_timer_time (field 8) - in ms
+  view.setUint8(offset++, 8);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_distance (field 9) - in cm
+  view.setUint8(offset++, 9);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // event (field 0) - lap = 9
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 0);
 
   // Data message
   view.setUint8(offset++, 0x02);
-  view.setUint32(offset, timestamp, true); offset += 4;
-  view.setUint32(offset, Math.round(distance * 100), true); offset += 4; // cm
-  view.setUint16(offset, Math.round(speed * 1000 / 3.6), true); offset += 2; // mm/s
-  view.setUint8(offset++, hr || 0);
+  const endTimestamp = startTimestamp + Math.floor(totalTime_s);
+  view.setUint32(offset, endTimestamp, true); offset += 4;
+  view.setUint32(offset, startTimestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(totalTime_s * 1000), true); offset += 4;
+  view.setUint32(offset, Math.round(totalTime_s * 1000), true); offset += 4;
+  view.setUint32(offset, Math.round(distance_m * 100), true); offset += 4;
+  view.setUint8(offset++, 9); // event = lap
+
+  return buffer.slice(0, offset);
+}
+
+function createSessionMessage(timestamp, distance, time, numLaps) {
+  const buffer = new ArrayBuffer(60);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message
+  view.setUint8(offset++, 0x43); // Definition, local type 3
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 0);
+  view.setUint16(offset, 18, true); offset += 2; // session = 18
+  view.setUint8(offset++, 6); // 6 fields
+
+  // timestamp (field 253)
+  view.setUint8(offset++, 253);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_elapsed_time (field 7)
+  view.setUint8(offset++, 7);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_timer_time (field 8)
+  view.setUint8(offset++, 8);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_distance (field 9)
+  view.setUint8(offset++, 9);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // sport (field 5)
+  view.setUint8(offset++, 5);
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 0);
+
+  // num_laps (field 26)
+  view.setUint8(offset++, 26);
+  view.setUint8(offset++, 2);
+  view.setUint8(offset++, 132);
+
+  // Data message
+  view.setUint8(offset++, 0x03);
+  const endTimestamp = timestamp + Math.floor(time);
+  view.setUint32(offset, endTimestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(time * 1000), true); offset += 4;
+  view.setUint32(offset, Math.round(time * 1000), true); offset += 4;
+  view.setUint32(offset, Math.round(distance * 100), true); offset += 4;
+  view.setUint8(offset++, 1); // Running
+  view.setUint16(offset, numLaps, true); offset += 2;
+
+  return buffer.slice(0, offset);
+}
+
+function createActivityMessage(timestamp, totalTime, numSessions) {
+  const buffer = new ArrayBuffer(40);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // Definition message
+  view.setUint8(offset++, 0x44); // Definition, local type 4
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 0);
+  view.setUint16(offset, 34, true); offset += 2; // activity = 34
+  view.setUint8(offset++, 4); // 4 fields
+
+  // timestamp (field 253)
+  view.setUint8(offset++, 253);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // total_timer_time (field 0) - in ms
+  view.setUint8(offset++, 0);
+  view.setUint8(offset++, 4);
+  view.setUint8(offset++, 134);
+
+  // num_sessions (field 1)
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 2);
+  view.setUint8(offset++, 132);
+
+  // type (field 2) - manual = 0
+  view.setUint8(offset++, 2);
+  view.setUint8(offset++, 1);
+  view.setUint8(offset++, 0);
+
+  // Data message
+  view.setUint8(offset++, 0x04);
+  const endTimestamp = timestamp + Math.floor(totalTime);
+  view.setUint32(offset, endTimestamp, true); offset += 4;
+  view.setUint32(offset, Math.round(totalTime * 1000), true); offset += 4;
+  view.setUint16(offset, numSessions, true); offset += 2;
+  view.setUint8(offset++, 0); // type = manual
 
   return buffer.slice(0, offset);
 }
