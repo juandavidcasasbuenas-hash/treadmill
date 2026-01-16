@@ -899,8 +899,13 @@ function triggerLap(isAuto = false) {
 
   if (lapDistance_m < 10) return; // Ignore tiny laps
 
+  // Store lap with explicit start/end times for reliable export
   const lap = {
     number: workout.currentLap.number,
+    startTime_s: workout.currentLap.startTime_s,
+    endTime_s: workout.elapsed_s,
+    startDist_m: workout.currentLap.startDistance_m,
+    endDist_m: workout.distance_m,
     distance_m: lapDistance_m,
     time_s: lapTime_s,
     avgSpeed_kmh: (lapDistance_m / 1000) / (lapTime_s / 3600),
@@ -908,7 +913,7 @@ function triggerLap(isAuto = false) {
   };
 
   workout.laps.push(lap);
-  log(`Lap ${lap.number}: ${fmtDistance(lap.distance_m / 1000)} km in ${fmtTime(lap.time_s)}`);
+  log(`Lap ${lap.number}: ${fmtDistance(lap.distance_m / 1000)} km in ${fmtTime(lap.time_s)} (${isAuto ? 'auto' : 'manual'})`);
 
   // Start new lap
   workout.currentLap = {
@@ -1032,21 +1037,18 @@ function renderLapHistory() {
 // Build list of laps for export (including current incomplete lap)
 function getLapsForExport() {
   const allLaps = [];
-  let lapStartTime_s = 0;
-  let lapStartDist_m = 0;
 
+  // Use the stored start/end times directly from each lap
   for (const lap of workout.laps) {
     allLaps.push({
       number: lap.number,
-      startTime_s: lapStartTime_s,
-      endTime_s: lapStartTime_s + lap.time_s,
-      startDist_m: lapStartDist_m,
-      endDist_m: lapStartDist_m + lap.distance_m,
+      startTime_s: lap.startTime_s,
+      endTime_s: lap.endTime_s,
+      startDist_m: lap.startDist_m,
+      endDist_m: lap.endDist_m,
       time_s: lap.time_s,
       distance_m: lap.distance_m
     });
-    lapStartTime_s += lap.time_s;
-    lapStartDist_m += lap.distance_m;
   }
 
   // Add current incomplete lap if there's meaningful distance
@@ -1090,23 +1092,36 @@ function exportTCX() {
   const isoStart = startTime.toISOString();
   const allLaps = getLapsForExport();
 
+  // Debug: log lap count
+  log(`Exporting ${allLaps.length} lap(s)`);
+
   let lapsXml = '';
 
-  for (const lap of allLaps) {
+  for (let i = 0; i < allLaps.length; i++) {
+    const lap = allLaps[i];
     const lapStartDate = new Date(startTime.getTime() + lap.startTime_s * 1000);
 
-    // Filter trackpoints for this lap
+    // Filter trackpoints for this lap (use < for end to avoid overlap, except for last lap)
+    const isLastLap = i === allLaps.length - 1;
     const lapTrackpoints = workout.trackpoints.filter(tp =>
-      tp.time >= lap.startTime_s && tp.time <= lap.endTime_s
+      tp.time >= lap.startTime_s && (isLastLap ? tp.time <= lap.endTime_s : tp.time < lap.endTime_s)
     );
 
-    // Calculate lap-specific HR average
+    // Calculate lap-specific metrics
     const lapHRReadings = workout.hrReadings.filter(hr =>
-      hr.time >= lap.startTime_s && hr.time <= lap.endTime_s
+      hr.time >= lap.startTime_s && (isLastLap ? hr.time <= lap.endTime_s : hr.time < lap.endTime_s)
     );
     const avgHR = lapHRReadings.length > 0
       ? Math.round(lapHRReadings.reduce((a, b) => a + b.hr, 0) / lapHRReadings.length)
       : null;
+    const maxHR = lapHRReadings.length > 0
+      ? Math.max(...lapHRReadings.map(h => h.hr))
+      : null;
+
+    // Calculate max speed for this lap (m/s)
+    const lapSpeeds = lapTrackpoints.map(tp => tp.speed_kmh || 0);
+    const maxSpeed = lapSpeeds.length > 0 ? Math.max(...lapSpeeds) * 1000 / 3600 : 0;
+    const avgSpeed = lap.distance_m / lap.time_s; // m/s
 
     // Build trackpoints XML for this lap
     let trackpointsXml = '';
@@ -1115,40 +1130,51 @@ function exportTCX() {
       trackpointsXml += `
           <Trackpoint>
             <Time>${tpTime}</Time>
-            <DistanceMeters>${tp.distance_m.toFixed(2)}</DistanceMeters>
-            ${tp.hr ? `<HeartRateBpm><Value>${tp.hr}</Value></HeartRateBpm>` : ''}
+            <DistanceMeters>${tp.distance_m.toFixed(2)}</DistanceMeters>${tp.hr ? `
+            <HeartRateBpm><Value>${tp.hr}</Value></HeartRateBpm>` : ''}
             <Extensions>
-              <TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
-                <Speed>${(tp.speed_kmh * 1000 / 3600).toFixed(3)}</Speed>
-              </TPX>
+              <ns3:TPX>
+                <ns3:Speed>${(tp.speed_kmh * 1000 / 3600).toFixed(3)}</ns3:Speed>
+              </ns3:TPX>
             </Extensions>
           </Trackpoint>`;
     }
 
+    // TCX Lap element - element order matters per schema!
     lapsXml += `
       <Lap StartTime="${lapStartDate.toISOString()}">
         <TotalTimeSeconds>${lap.time_s.toFixed(1)}</TotalTimeSeconds>
         <DistanceMeters>${lap.distance_m.toFixed(2)}</DistanceMeters>
-        <Calories>0</Calories>
-        ${avgHR ? `<AverageHeartRateBpm><Value>${avgHR}</Value></AverageHeartRateBpm>` : ''}
+        <MaximumSpeed>${maxSpeed.toFixed(3)}</MaximumSpeed>
+        <Calories>0</Calories>${avgHR ? `
+        <AverageHeartRateBpm><Value>${avgHR}</Value></AverageHeartRateBpm>` : ''}${maxHR ? `
+        <MaximumHeartRateBpm><Value>${maxHR}</Value></MaximumHeartRateBpm>` : ''}
         <Intensity>Active</Intensity>
         <TriggerMethod>Distance</TriggerMethod>
         <Track>${trackpointsXml}
         </Track>
+        <Extensions>
+          <ns3:LX>
+            <ns3:AvgSpeed>${avgSpeed.toFixed(3)}</ns3:AvgSpeed>
+          </ns3:LX>
+        </Extensions>
       </Lap>`;
   }
 
   const tcx = `<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase
-  xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd"
-  xmlns:ns5="http://www.garmin.com/xmlschemas/ActivityGoals/v1"
-  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"
-  xmlns:ns2="http://www.garmin.com/xmlschemas/UserProfile/v2"
   xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"
+  xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd">
   <Activities>
     <Activity Sport="Running">
       <Id>${isoStart}</Id>${lapsXml}
+      <Creator xsi:type="Device_t">
+        <Name>Treadmill Web App</Name>
+        <UnitId>0</UnitId>
+        <ProductID>0</ProductID>
+      </Creator>
     </Activity>
   </Activities>
 </TrainingCenterDatabase>`;
