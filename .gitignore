@@ -1,0 +1,13 @@
+# Environment variables (secrets)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node (if added later)
+node_modules/
+
+# OS files
+.DS_Store
